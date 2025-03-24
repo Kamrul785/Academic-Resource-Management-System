@@ -102,15 +102,25 @@ function generateUniqueFilename($original_filename) {
  */
 function getUserResources($user_id, $con) {
     $stmt = $con->prepare("
-        SELECT r.*, c.course_name, c.course_code 
-        FROM resources r 
-        JOIN courses c ON r.course_id = c.course_id 
-        WHERE r.user_id = ? 
+        SELECT r.*, 
+               d.name as department_name,
+               c.course_name,
+               c.course_code
+        FROM resources r
+        LEFT JOIN departments d ON r.department_id = d.department_id
+        LEFT JOIN courses c ON r.course_id = c.course_id
+        WHERE r.user_id = ?
         ORDER BY r.created_at DESC
     ");
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
-    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $result = $stmt->get_result();
+    
+    $resources = [];
+    while ($row = $result->fetch_assoc()) {
+        $resources[] = $row;
+    }
+    return $resources;
 }
 
 /**

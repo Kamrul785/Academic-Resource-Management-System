@@ -12,59 +12,65 @@ $resources = getUserResources($_SESSION['user_id'], $con);
 $departments = $con->query("SELECT * FROM departments ORDER BY name");
 
 // Handle file upload
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $errors = [];
-    $success = false;
-
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
     $title = filter_input(INPUT_POST, 'title', FILTER_SANITIZE_STRING);
     $description = filter_input(INPUT_POST, 'description', FILTER_SANITIZE_STRING);
+    $department_id = filter_input(INPUT_POST, 'department_id', FILTER_VALIDATE_INT);
     $course_id = filter_input(INPUT_POST, 'course_id', FILTER_VALIDATE_INT);
-    $file = $_FILES['file'] ?? null;
-
-    // Validation
-    if (empty($title)) {
-        $errors[] = "Title is required";
-    }
-    if (empty($course_id)) {
-        $errors[] = "Please select a course";
-    }
-    if (!$file || $file['error'] !== UPLOAD_ERR_OK) {
-        $errors[] = "Please select a file to upload";
-    } elseif (!isValidFileType($file['name'])) {
-        $errors[] = "Invalid file type. Allowed types: PDF, DOC, DOCX, PPT, PPTX, TXT, ZIP, RAR";
-    }
-
-    if (empty($errors)) {
-        // Create uploads directory if it doesn't exist
-        $upload_dir = 'uploads/';
-        if (!file_exists($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
-        }
-
-        // Generate unique filename
-        $filename = generateUniqueFilename($file['name']);
-        $filepath = $upload_dir . $filename;
-
-        // Move uploaded file
-        if (move_uploaded_file($file['tmp_name'], $filepath)) {
-            // Insert into database
-            $stmt = $con->prepare("
-                INSERT INTO resources (user_id, course_id, title, file_path, description, file_type)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ");
-            $file_type = getFileExtension($file['name']);
-            $stmt->bind_param("iissss", $_SESSION['user_id'], $course_id, $title, $filepath, $description, $file_type);
-            
-            if ($stmt->execute()) {
-                $success = true;
-                $_SESSION['success_message'] = "Resource uploaded successfully!";
-                header("Location: dashboard.php");
-                exit();
-            } else {
-                $errors[] = "Failed to save resource information";
-            }
+    $custom_course = filter_input(INPUT_POST, 'custom_course', FILTER_SANITIZE_STRING);
+    
+    if (!$title || !$department_id) {
+        $error = "Please fill in all required fields.";
+    } else {
+        $file = $_FILES['file'];
+        $file_name = $file['name'];
+        $file_tmp = $file['tmp_name'];
+        $file_size = $file['size'];
+        $file_type = $file['type'];
+        
+        // Validate file type
+        $allowed_types = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                         'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                         'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'];
+        
+        if (!in_array($file_type, $allowed_types)) {
+            $error = "Invalid file type. Allowed types: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX";
         } else {
-            $errors[] = "Failed to upload file";
+            // Create uploads directory if it doesn't exist
+            $upload_dir = 'uploads/';
+            if (!file_exists($upload_dir)) {
+                mkdir($upload_dir, 0777, true);
+            }
+            
+            // Generate unique filename
+            $file_extension = pathinfo($file_name, PATHINFO_EXTENSION);
+            $unique_filename = uniqid() . '_' . time() . '.' . $file_extension;
+            $file_path = $upload_dir . $unique_filename;
+            
+            // Debug information
+            error_log("Attempting to upload file to: " . $file_path);
+            
+            if (move_uploaded_file($file_tmp, $file_path)) {
+                // If using custom course, set course_id to NULL
+                if (!empty($custom_course)) {
+                    $course_id = null;
+                }
+                
+                $stmt = $con->prepare("INSERT INTO resources (title, description, file_path, file_type, file_size, department_id, course_id, custom_course, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param("ssssiisii", $title, $description, $file_path, $file_type, $file_size, $department_id, $course_id, $custom_course, $_SESSION['user_id']);
+                
+                if ($stmt->execute()) {
+                    $success = "Resource uploaded successfully!";
+                    error_log("Resource uploaded successfully: " . $file_path);
+                } else {
+                    $error = "Error uploading resource: " . $stmt->error;
+                    error_log("Database error: " . $stmt->error);
+                }
+                $stmt->close();
+            } else {
+                $error = "Error moving uploaded file. Upload error: " . $file['error'];
+                error_log("File upload error: " . $file['error']);
+            }
         }
     }
 }
@@ -106,10 +112,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
 
                     <div class="mb-3">
-                        <label for="course_id" class="form-label">Course</label>
-                        <select class="form-select" id="course_id" name="course_id" required>
+                        <label for="course" class="form-label">Course</label>
+                        <select class="form-select" id="course" name="course_id">
                             <option value="">Select Course</option>
                         </select>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="useCustomCourse">
+                            <label class="form-check-label" for="useCustomCourse">
+                                Use Custom Course
+                            </label>
+                        </div>
+                        <div class="mt-2" id="customCourseDiv" style="display: none;">
+                            <input type="text" class="form-control" id="customCourse" name="custom_course" placeholder="Enter custom course name">
+                        </div>
                     </div>
 
                     <div class="mb-3">
@@ -153,17 +168,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <?php foreach ($resources as $resource): ?>
                                     <tr>
                                         <td><?php echo h($resource['title']); ?></td>
-                                        <td><?php echo h($resource['course_name']); ?> (<?php echo h($resource['course_code']); ?>)</td>
-                                        <td><?php echo strtoupper(h($resource['file_type'])); ?></td>
+                                        <td>
+                                            <?php 
+                                            if (!empty($resource['custom_course'])) {
+                                                echo h($resource['custom_course']);
+                                            } else {
+                                                echo h($resource['course_name']) . ' (' . h($resource['course_code']) . ')';
+                                            }
+                                            ?>
+                                        </td>
+                                        <td><?php echo strtoupper(pathinfo($resource['file_path'], PATHINFO_EXTENSION)); ?></td>
                                         <td><?php echo date('M d, Y', strtotime($resource['created_at'])); ?></td>
                                         <td>
-                                            <a href="<?php echo h($resource['file_path']); ?>" class="btn btn-sm btn-primary" target="_blank">
+                                            <a href="download.php?id=<?php echo $resource['id']; ?>" class="btn btn-sm btn-primary">
                                                 <i class="bi bi-download"></i>
                                             </a>
-                                            <a href="edit_resource.php?id=<?php echo $resource['resource_id']; ?>" class="btn btn-sm btn-warning">
+                                            <a href="edit_resource.php?id=<?php echo $resource['id']; ?>" class="btn btn-sm btn-warning">
                                                 <i class="bi bi-pencil"></i>
                                             </a>
-                                            <a href="delete_resource.php?id=<?php echo $resource['resource_id']; ?>" class="btn btn-sm btn-danger" 
+                                            <a href="delete_resource.php?id=<?php echo $resource['id']; ?>" class="btn btn-sm btn-danger" 
                                                onclick="return confirm('Are you sure you want to delete this resource?')">
                                                 <i class="bi bi-trash"></i>
                                             </a>
@@ -180,27 +203,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 
 <script>
-// Dynamic course loading based on department selection
-document.getElementById('department_id').addEventListener('change', function() {
-    const departmentId = this.value;
-    const courseSelect = document.getElementById('course_id');
-    
-    // Clear current options
-    courseSelect.innerHTML = '<option value="">Select Course</option>';
-    
-    if (departmentId) {
-        // Fetch courses for selected department
-        fetch(`get_courses.php?department_id=${departmentId}`)
-            .then(response => response.json())
-            .then(courses => {
-                courses.forEach(course => {
-                    const option = document.createElement('option');
-                    option.value = course.course_id;
-                    option.textContent = `${course.course_name} (${course.course_code})`;
-                    courseSelect.appendChild(option);
-                });
-            })
-            .catch(error => console.error('Error:', error));
+document.addEventListener('DOMContentLoaded', function() {
+    const departmentSelect = document.getElementById('department_id');
+    const courseSelect = document.getElementById('course');
+    const useCustomCourseCheckbox = document.getElementById('useCustomCourse');
+    const customCourseDiv = document.getElementById('customCourseDiv');
+    const customCourseInput = document.getElementById('customCourse');
+
+    // Handle custom course checkbox
+    useCustomCourseCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            courseSelect.disabled = true;
+            customCourseDiv.style.display = 'block';
+        } else {
+            courseSelect.disabled = false;
+            customCourseDiv.style.display = 'none';
+            customCourseInput.value = '';
+        }
+    });
+
+    // Handle department change
+    departmentSelect.addEventListener('change', function() {
+        const departmentId = this.value;
+        courseSelect.innerHTML = '<option value="">Select Course</option>';
+        
+        if (departmentId) {
+            fetch(`get_courses.php?department_id=${departmentId}`)
+                .then(response => response.json())
+                .then(courses => {
+                    courses.forEach(course => {
+                        const option = document.createElement('option');
+                        option.value = course.course_id;
+                        option.textContent = `${course.course_name} (${course.course_code})`;
+                        courseSelect.appendChild(option);
+                    });
+                })
+                .catch(error => console.error('Error:', error));
+        }
+    });
+
+    // If department is pre-selected, load its courses
+    if (departmentSelect.value) {
+        departmentSelect.dispatchEvent(new Event('change'));
     }
 });
 

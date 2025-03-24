@@ -3,7 +3,7 @@
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
-define('DB_NAME', 'arms_db');
+define('DB_NAME', 'software_project');
 define('DB_PORT', 3307);
 
 // Create database connection

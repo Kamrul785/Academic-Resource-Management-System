@@ -12,11 +12,11 @@ $departments = $con->query("SELECT * FROM departments ORDER BY name");
 
 // Build query
 $query = "
-    SELECT r.*, u.name as uploader_name, c.course_name, c.course_code, d.name as department_name
+    SELECT r.*, u.name as user_name, c.course_name, c.course_code, d.name as department_name
     FROM resources r
     JOIN users u ON r.user_id = u.user_id
-    JOIN courses c ON r.course_id = c.course_id
-    JOIN departments d ON c.department_id = d.department_id
+    LEFT JOIN courses c ON r.course_id = c.course_id
+    LEFT JOIN departments d ON r.department_id = d.department_id
     WHERE 1=1
 ";
 
@@ -24,7 +24,7 @@ $params = [];
 $types = "";
 
 if ($department_id) {
-    $query .= " AND c.department_id = ?";
+    $query .= " AND r.department_id = ?";
     $params[] = $department_id;
     $types .= "i";
 }
@@ -36,10 +36,10 @@ if ($course_id) {
 }
 
 if ($search) {
-    $query .= " AND (r.title LIKE ? OR r.description LIKE ? OR c.course_name LIKE ?)";
+    $query .= " AND (r.title LIKE ? OR r.description LIKE ? OR c.course_name LIKE ? OR r.custom_course LIKE ?)";
     $search_param = "%$search%";
-    $params = array_merge($params, [$search_param, $search_param, $search_param]);
-    $types .= "sss";
+    $params = array_merge($params, [$search_param, $search_param, $search_param, $search_param]);
+    $types .= "ssss";
 }
 
 $query .= " ORDER BY r.created_at DESC";
@@ -109,23 +109,32 @@ $resources = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                             <div class="col-md-6 mb-4">
                                 <div class="card h-100">
                                     <div class="card-body">
-                                        <h5 class="card-title"><?php echo h($resource['title']); ?></h5>
-                                        <p class="card-text text-muted">
-                                            <small>
-                                                <i class="bi bi-book"></i> <?php echo h($resource['course_name']); ?> (<?php echo h($resource['course_code']); ?>)<br>
-                                                <i class="bi bi-building"></i> <?php echo h($resource['department_name']); ?><br>
-                                                <i class="bi bi-person"></i> <?php echo h($resource['uploader_name']); ?><br>
-                                                <i class="bi bi-calendar"></i> <?php echo date('M d, Y', strtotime($resource['created_at'])); ?>
+                                        <h5 class="card-title"><?php echo htmlspecialchars($resource['title']); ?></h5>
+                                        <p class="card-text"><?php echo htmlspecialchars($resource['description']); ?></p>
+                                        <p class="card-text">
+                                            <small class="text-muted">
+                                                Department: <?php echo htmlspecialchars($resource['department_name']); ?><br>
+                                                Course: <?php echo $resource['custom_course'] ? htmlspecialchars($resource['custom_course']) : htmlspecialchars($resource['course_name']); ?><br>
+                                                Uploaded by: <?php echo htmlspecialchars($resource['user_name']); ?><br>
+                                                Date: <?php echo date('M d, Y', strtotime($resource['created_at'])); ?>
                                             </small>
                                         </p>
-                                        <?php if ($resource['description']): ?>
-                                            <p class="card-text"><?php echo h($resource['description']); ?></p>
-                                        <?php endif; ?>
                                         <div class="d-flex justify-content-between align-items-center">
-                                            <span class="badge bg-secondary"><?php echo strtoupper(h($resource['file_type'])); ?></span>
-                                            <a href="<?php echo h($resource['file_path']); ?>" class="btn btn-primary btn-sm" target="_blank">
-                                                <i class="bi bi-download"></i> Download
-                                            </a>
+                                            <span class="badge bg-secondary"><?php echo strtoupper(pathinfo($resource['file_path'], PATHINFO_EXTENSION)); ?></span>
+                                            <div>
+                                                <a href="download.php?id=<?php echo $resource['id']; ?>" class="btn btn-sm btn-primary">
+                                                    <i class="bi bi-download"></i> Download
+                                                </a>
+                                                <?php if (isset($_SESSION['user_id']) && ($_SESSION['user_id'] == $resource['user_id'] || $_SESSION['role'] === 'admin')): ?>
+                                                    <a href="edit_resource.php?id=<?php echo $resource['id']; ?>" class="btn btn-sm btn-warning">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </a>
+                                                    <a href="delete_resource.php?id=<?php echo $resource['id']; ?>" class="btn btn-sm btn-danger" 
+                                                       onclick="return confirm('Are you sure you want to delete this resource?')">
+                                                        <i class="bi bi-trash"></i>
+                                                    </a>
+                                                <?php endif; ?>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

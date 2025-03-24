@@ -1,6 +1,6 @@
 -- Create database
-CREATE DATABASE IF NOT EXISTS arms_db;
-USE arms_db;
+CREATE DATABASE IF NOT EXISTS software_project;
+USE software_project;
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -29,16 +29,21 @@ CREATE TABLE IF NOT EXISTS courses (
 
 -- Resources table
 CREATE TABLE IF NOT EXISTS resources (
-    resource_id INT PRIMARY KEY AUTO_INCREMENT,
-    user_id INT,
-    course_id INT,
+    id INT PRIMARY KEY AUTO_INCREMENT,
     title VARCHAR(255) NOT NULL,
-    file_path VARCHAR(255) NOT NULL,
     description TEXT,
-    file_type VARCHAR(50),
+    file_path VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    file_size INT NOT NULL,
+    department_id INT,
+    course_id INT,
+    custom_course VARCHAR(255),
+    user_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(user_id),
-    FOREIGN KEY (course_id) REFERENCES courses(course_id)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(department_id),
+    FOREIGN KEY (course_id) REFERENCES courses(course_id),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
 -- Votes table
@@ -48,7 +53,7 @@ CREATE TABLE IF NOT EXISTS votes (
     resource_id INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(user_id),
-    FOREIGN KEY (resource_id) REFERENCES resources(resource_id),
+    FOREIGN KEY (resource_id) REFERENCES resources(id),
     UNIQUE KEY unique_vote (user_id, resource_id)
 );
 
@@ -60,7 +65,7 @@ CREATE TABLE IF NOT EXISTS comments (
     comment_text TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(user_id),
-    FOREIGN KEY (resource_id) REFERENCES resources(resource_id)
+    FOREIGN KEY (resource_id) REFERENCES resources(id)
 );
 
 -- Insert default admin user (password: admin123)
