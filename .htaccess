@@ -1,0 +1,14 @@
+# Deny direct access to the uploads directory
+<FilesMatch "\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|zip|rar)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Allow access to download.php
+<Files "download.php">
+    Order Allow,Deny
+    Allow from all
+</Files>
+
+# Prevent directory listing
+Options -Indexes 
